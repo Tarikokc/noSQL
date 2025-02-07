@@ -1,8 +1,20 @@
+# filebeat.inputs:
+# - type: log
+#   enabled: true
+#   paths:
+#     - /logs/*.log
+
+# output.logstash:
+#   hosts: ["logstash:5045"]
 filebeat.inputs:
 - type: log
   enabled: true
   paths:
     - /logs/*.log
+  json.keys_under_root: true  # Pour mieux parser le JSON
+  json.add_error_key: true    # Ajoute une clé d'erreur si le parsing JSON échoue
+  fields:
+    type: python              # Pour que Logstash puisse identifier le type de log
 
 output.logstash:
-  hosts: ["logstash:5045"]
+  hosts: ["logstash:5044"]
