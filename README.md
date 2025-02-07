@@ -1,9 +1,8 @@
-# NoSQL Database Examples
+# ELK Stack Integration
 
-This repository contains example implementations for MongoDB, Redis, and Neo4j databases created in February 2025.
+This section describes the Elasticsearch, Logstash, and Kibana (ELK) stack implementation in our NoSQL project.
 
 ## 📂 Directory Structure
-
 ```
 NOSQL/
 ├── mongoDB/
@@ -28,65 +27,171 @@ NOSQL/
         ├── redis_python_connection.py
         └── redis_python_pool.py
 ```
+```
+Elasticsearch/
+├── Logstach/                      # Logstash configurations
+│   ├── logs/                      # Log files directory
+│   │   └── python_logs.log        # Python application logs
+│   ├── data/                      # Data files
+│   │   ├── apache_logs.txt        # Apache server logs
+│   │   ├── data-json.csv         
+│   │   ├── data-json.log
+│   │   ├── data.csv
+│   │   └── data1.csv
+│   └── logstash.conf             # Main Logstash configuration
+├── filebeat/                      # Filebeat configuration
+│   └── filebeat.yml              # Filebeat settings
+└── web_server_logs/              # Web server specific configs
+    └── logstash-apache.conf      # Apache logs configuration
+```
 
-## 🚀 Getting Started 
+## 🚀 Getting Started
 
 ### Prerequisites
-
-- Docker
-- Python 3.x
-- WSL2 (if using Windows)
+* Docker and Docker Compose
+* ELK Stack 7.11.x
 
 ### Installation
+
+1. Start the ELK stack using Docker Compose:
 ```bash
-# Create Python virtual environment
-python3 -m venv python_env
-source python_env/bin/activate
-
-# Install required packages
-pip install pymongo redis neo4j
+docker-compose up -d
 ```
 
-### Starting Databases with Docker
-
+2. Verify services are running:
 ```bash
-# MongoDB
-docker run -d -p 27017:27017 mongo
-
-# Redis
-docker run -d -p 6379:6379 redis
-
-# Neo4j (password must be at least 8 characters)
-docker run -d --name neo4j -p 7474:7474 -p 7687:7687 -e NEO4J_AUTH=neo4j/test12345678 neo4j
+docker-compose ps
 ```
 
-### WSL Users
-Replace `localhost` with your host machine IP in connection strings:
-```python
-# Find your host IP
-cat /etc/resolv.conf | grep nameserver | awk '{print $2}'
+### Service Ports
+* Elasticsearch: 9200, 9300
+* Logstash: 5044, 5045, 9600
+* Kibana: 5601
+
+## 🔧 Configuration Files
+
+### Logstash Configuration
+```ruby
+input {
+  beats {
+    port => 5044
+    type => "python"
+  }
+  file {
+    path => "/data/apache_logs.txt"
+    start_position => "beginning"
+    sincedb_path => "/dev/null"
+    type => "apache"
+  }
+}
+
+filter {
+  if [type] == "python" {
+    json {
+      source => "message"
+      target => "log"
+    }
+  } else if [type] == "apache" {
+    grok {
+      match => { "message" => "%{COMBINEDAPACHELOG}" }
+    }
+    date {
+      match => [ "timestamp", "dd/MMM/yyyy:HH:mm:ss Z" ]
+      target => "@timestamp"
+      remove_field => "timestamp"
+    }
+    geoip {
+      source => "clientip"
+    }
+  }
+}
+
+output {
+  if [type] == "python" {
+    elasticsearch {
+      hosts => ["elasticsearch:9200"]
+      index => "python-logs"
+    }
+    stdout {
+      codec => rubydebug
+    }
+  } else if [type] == "apache" {
+    elasticsearch {
+      hosts => ["elasticsearch:9200"]
+      index => "web_server_logs"
+    }
+  }
+}
 ```
 
-## 📚 Database Examples
+### Filebeat Configuration
+```yaml
+filebeat.inputs:
+- type: log
+  enabled: true
+  paths:
+    - /logs/*.log
+  json.keys_under_root: true
+  json.add_error_key: true
+  fields:
+    type: python
 
-### MongoDB
-- Basic CRUD operations
-- Account management example
-- JSON data handling
+output.logstash:
+  hosts: ["logstash:5044"]
+```
 
-### Redis
-- Connection examples
-- Connection pooling
-- Data types:
-  - Lists
-  - Sets
-  - Hashes
-  - Sorted Sets
+## 📊 Data Types and Use Cases
 
-### Neo4j
-- Graph database operations
-- Movie recommendation system
-- Relationship queries
+### Log Types
+1. Python Application Logs
+   * Format: JSON
+   * Index: python-logs
+   * Use cases: Application monitoring, debugging
 
----
+2. Apache Web Server Logs
+   * Format: Combined Apache Log
+   * Index: web_server_logs
+   * Use cases: Web traffic analysis, security monitoring
 
+## 🔍 Kibana Access
+
+1. Access Kibana dashboard:
+   * URL: http://localhost:5601
+   * Default credentials: 
+     * Username: elastic
+     * Password: password
+
+2. Create index patterns:
+   * `python-logs` for Python application logs
+   * `web_server_logs` for Apache server logs
+
+## 🛠 Maintenance
+
+### Log Rotation
+Logs are automatically rotated based on:
+* Size: 1GB per file
+* Time: Daily rotation
+
+### Backup
+Elasticsearch data is persisted using Docker volumes.
+
+## 🔒 Security Notes
+* Basic authentication is enabled
+* SSL/TLS is disabled (development setup)
+* X-Pack security features are disabled
+
+## 📝 Tips for Development
+1. Monitor Logstash processing:
+```bash
+docker-compose logs -f logstash
+```
+
+2. Check Elasticsearch indices:
+```bash
+curl -X GET "localhost:9200/_cat/indices?v"
+```
+
+3. Restart individual services:
+```bash
+docker-compose restart [service_name]
+```
